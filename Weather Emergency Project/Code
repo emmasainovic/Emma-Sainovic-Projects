@@ -1,0 +1,250 @@
+import tkinter as tk
+from PIL import Image, ImageTk
+import requests
+from bs4 import BeautifulSoup
+
+root = tk.Tk()
+root.geometry("1000x700")
+
+us_states = {'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA', 'Colorado': 'CO',
+            'Connecticut': 'CT', 'Delaware': 'DE', 'District of Columbia': 'DC', 'Florida': 'FL', 'Georgia': 'GA',
+            'Hawaii': 'HI', 'Idaho': 'ID','Illinois': 'IL','Indiana': 'IN','Iowa': 'IA','Kansas': 'KS','Kentucky': 'KY',
+             'Louisiana': 'LA','Maine': 'ME','Maryland': 'MD','Massachusetts': 'MA','Michigan': 'MI','Minnesota': 'MN',
+             'Mississippi': 'MS','Missouri': 'MO','Montana': 'MT','Nebraska': 'NE','Nevada': 'NV','New Hampshire': 'NH',
+             'New Jersey': 'NJ','New Mexico': 'NM','New York': 'NY','North Carolina': 'NC','North Dakota': 'ND','Ohio': 'OH',
+             'Oklahoma': 'OK','Oregon': 'OR','Pennsylvania': 'PA','Rhode Island': 'RI','South Carolina': 'SC',
+             'South Dakota': 'SD','Tennessee': 'TN','Texas': 'TX','Utah': 'UT','Vermont': 'VT','Virginia': 'VA',
+             'Washington': 'WA','West Virginia': 'WV', 'Wisconsin': 'WI','Wyoming': 'WY'}
+
+alert_frame = tk.Frame(root)
+alert_frame.pack(pady=20)
+
+# First function gets the alerts using the Weather API 
+# To clear the frame we referenced: # https://stackoverflow.com/questions/15781802/python-tkinter-clearing-a-frame
+
+def get_alerts(state):
+    
+    # This handles all errors that would happen when the user enters a state 
+    state = state.strip()  
+    
+    if len(state) == 2:  
+        state = state.upper()
+    else:  
+        state = us_states.get(state.title())  
+    
+    if not state:
+        tk.Label(alert_frame, text="Invalid state. Please enter a valid state name or abbreviation.").pack()
+        return
+    
+    photo_canvas.pack_forget()
+    
+    for widget in alert_frame.winfo_children():
+        if widget != photo_canvas:  # Ensure the image canvas isn't unintentionally destroyed
+            widget.destroy()
+            
+    # get_info_button.pack_forget()
+    basic_resources_button.pack_forget()
+    food_items_button.pack_forget()
+
+    try:
+        request = requests.get(f"https://api.weather.gov/alerts/active?area={state}")
+        request.raise_for_status()
+        web = request.json()
+        features = web.get("features", [])
+
+        # This accounts for if there are no alerts within the state 
+        if not features:
+            tk.Label(alert_frame, text="No active alerts for this state.").pack()
+            return
+        
+        # create empty list and dictionary to use later for the data 
+        areas_list = []
+        alert_data = {}
+
+        for i in features:
+            areas = i["properties"]["areaDesc"].split(";")
+            alert = i["properties"]["event"]
+            severity = i["properties"]["severity"]
+            head = i["properties"]["headline"]
+            certainty = i["properties"]["certainty"]
+            prep = i["properties"]["response"]
+            
+            for area in areas:
+                areas_list.append(area.strip())
+                alert_data[area.strip()] = f"Event: {alert}\nSeverity: {severity}\nCertainty: {certainty}\nResponse: {prep}\nAreas: {area.strip()}\nHeadline: {head}"
+        
+        # gets rid of duplicates 
+        areas_list = list(set(areas_list))
+        
+        instruction_label = tk.Label(alert_frame, text="These are the areas in the state that have a weather alert. Please select your area for the specific weather alert.", font=("Arial", 12, "italic"))
+        instruction_label.pack(pady=5)
+        
+        # https://www.geeksforgeeks.org/python-tkinter-listbox-widget/
+        # https://www.pythontutorial.net/tkinter/tkinter-listbox/
+        area_listbox = tk.Listbox(alert_frame, selectmode="single", width=50, height=15)
+        area_listbox.pack(pady=10)
+        
+        # https://stackoverflow.com/questions/42617481/end-is-not-working-in-insert-function-of-tkinter-listbox 
+        # https://tk-tutorial.readthedocs.io/en/latest/listbox/listbox.html
+        
+        for area in areas_list:
+            area_listbox.insert(tk.END, area)
+        
+        def show_selected_alert():
+            selected = area_listbox.get(area_listbox.curselection())
+            details = alert_data[selected]
+            show_more_info(details)
+        
+        select_area_button = tk.Button(alert_frame, text="Show Alert for Selected Area", command=show_selected_alert)
+        select_area_button.pack()
+
+            # This will give the user more information about the emergency alert they want to see 
+        alert_details = f"Event: {alert}\nSeverity: {severity}\nCertainty: {certainty}\nResponse: {prep}\nAreas: {areas}\nHeadline: {head}"
+
+        instruction_label2 = tk.Label(alert_frame, text="The following two buttons will give you resourses in order to prepare for your emergency!", font=("Arial", 12, "italic"))
+        instruction_label2.pack(pady=5)
+
+        # get_info_button.pack(pady=10)
+        basic_resources_button.pack(pady=10)
+        food_items_button.pack(pady=10)
+
+        # This is if there are any errors calling the api
+    except requests.exceptions.RequestException as e:
+        tk.Label(alert_frame, text=f"Error fetching alerts: {e}").pack()
+
+
+# So that the user can go back to other alerts we needed to get the more information in a different window 
+# https://www.pythontutorial.net/tkinter/tkinter-toplevel/ 
+
+def show_more_info(details):
+    information_links = get_information()
+
+    more_info_window = tk.Toplevel(root)
+    more_info_window.geometry("950x400")
+
+    alert_type = ""
+    for detail in details.split('\n'):
+        if "Event:" in detail: 
+            alert_type = detail.split(":", 1)[1].strip().lower()
+            break
+
+    for detail in details.split('\n'):
+        if ":" in detail:
+            label, value = detail.split(":", 1)
+            tk.Label(more_info_window, text=f"{label}:", font=("Arial", 12, "bold")).pack(anchor="w", padx=10)
+            tk.Label(more_info_window, text=value.strip(), font=("Arial", 10, "normal")).pack(anchor="w", padx=20)
+
+    tk.Label(more_info_window, text="\nRelated Link:", font=("Arial", 14, "bold")).pack(anchor="w", padx=10, pady=10)
+
+    keywords = ["flood", "tornado", "hurricane", "earthquake", "fire", "storm", "wind", "heat", "snow"]
+    found_links = False
+
+    for keyword in keywords:
+        if keyword in alert_type: 
+            for text, link in information_links.items():
+                if keyword in text.lower():
+                    link_label = tk.Label(more_info_window, text=text, fg="blue", cursor="hand2")
+                    link_label.pack(anchor="w", padx=10)
+                    link_label.bind("<Button-1>", lambda e, url=link: open_link(url))
+                    found_links = True
+
+    if not found_links:
+        tk.Label(more_info_window, text="No specific links found for this alert type.", font=("Arial", 12)).pack(anchor="w", padx=10)
+
+    tk.Label(more_info_window, text="").pack(pady=10)
+
+# This gets the hyperlinks of all the general iformation 
+def get_information():
+    base_link = "https://www.ready.gov"
+    source = requests.get("https://www.ready.gov/be-informed").text
+    soup = BeautifulSoup(source, "lxml")
+    information_links = {}
+
+    for i in soup.find_all("li", class_="usa-nav__submenu-item"):
+        text = i.a.text.strip()
+        link = i.a.get("href")
+        full_link = base_link + link
+        information_links[text] = full_link
+
+    return information_links
+
+# Here we scraped ready.gov to get a simple emergency kit for the user 
+def get_basic_resources():
+    url = "https://www.ready.gov/kit"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        section = soup.find('div', class_='checklist_fema_blocks')
+        items_list = section.find_all('li')
+
+        resource_window = tk.Toplevel(root)
+        resource_window.geometry("400x400")
+        resource_label = tk.Label(resource_window, text="Basic Disaster Supplies Kit:", font=("Arial", 14, "bold"))
+        resource_label.pack(pady=10)
+
+        for item in items_list:
+            item_label = tk.Label(resource_window, text=f"- {item.get_text(strip=True)}", wraplength=380)
+            item_label.pack(anchor="w", padx=10)
+    except requests.exceptions.RequestException as e:
+        tk.Label(root, text=f"Error fetching resources: {e}").pack()
+        
+
+        
+# This scrapes ready.gov again to give the user food items that they can get to prepare for the emergency 
+def get_food_items():
+    url = "https://www.ready.gov/food"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        section = soup.find('div', class_='checklist_fema_blocks')
+        items_list = section.find_all('li')
+
+        food_window = tk.Toplevel(root)
+        food_window.geometry("400x400")
+        food_label = tk.Label(food_window, text="Suggested Emergency Foods:", font=("Arial", 14, "bold"))
+        food_label.pack(pady=10)
+
+        for item in items_list:
+            item_label = tk.Label(food_window, text=f"- {item.get_text(strip=True)}", wraplength=380)
+            item_label.pack(anchor="w", padx=10)
+    except requests.exceptions.RequestException as e:
+        tk.Label(root, text=f"Error fetching food items: {e}").pack()
+
+# learned about this in class on Thursday 11/15
+def open_link(url):
+    import webbrowser
+    webbrowser.open_new(url)
+    
+# Create a Canvas for the image
+photo_canvas = tk.Canvas(root, width=400, height=400, bg="white")
+photo_canvas.pack(pady=10)
+
+# Load and display an image
+photo_path = "weatherpic.jpg"  # Replace with your image path
+image = Image.open(photo_path)
+image = image.resize((350, 350))  
+photo = ImageTk.PhotoImage(image, master=photo_canvas)
+
+photo_canvas.create_image(200, 200, anchor = "center", image=photo)
+    
+state = tk.StringVar()
+state.set(" ")
+
+app_label = tk.Label(root, text="This Is an Emergency Weather App", font = ("Helvetica", 20, "bold")).pack()
+state_label = tk.Label(root, text="Please enter your state:", font = ("Helvetica", 15, "normal")).pack()
+state_entry = tk.Entry(root, textvariable=state).pack()
+button = tk.Button(root, text="Enter", command=lambda: get_alerts(state.get()))
+button.pack()
+
+photo_canvas.pack()
+
+alert_frame = tk.Frame(root)
+alert_frame.pack(pady=20)
+
+#get_info_button = tk.Button(root, text="Get Information", command=get_information)
+basic_resources_button = tk.Button(root, text="Basic Resources", command=get_basic_resources)
+food_items_button = tk.Button(root, text="Suggested Food Items", command=get_food_items)
+
+root.mainloop()
